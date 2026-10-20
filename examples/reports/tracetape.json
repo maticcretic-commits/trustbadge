@@ -1,0 +1,1 @@
+{"command":"validate","files":[{"blank_lines":0,"errors":[],"events":23,"file":"runs/invoice-run.jsonl","incomplete_runs":[],"lines":23,"ok":true,"runs":["invoice-2026-10-20-1"],"warnings":[{"line":9,"message":"seq gap: 7 -> 9 (an event may have been lost)"}]}],"ok":true,"tool":"tracetape","version":"1.0.0"}
