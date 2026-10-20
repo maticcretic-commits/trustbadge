@@ -1,31 +1,53 @@
 # TrustBadge 🏅
 
-**One badge. Every check behind it.**
+**Run the AgentForge family over a project and you get eleven JSON reports in eleven shapes, each answering one question. Nobody reads eleven reports — a project lead wants one number and one badge, and wants to know exactly what arithmetic produced them.**
 
-Run the AgentForge family over a project and you get eleven JSON
-reports in eleven shapes, each answering one question: did it
-leak, did it drift, does the report hold up. Nobody reads eleven
-reports. A project lead wants one number and one badge — and wants
-to know exactly what arithmetic produced them.
+TrustBadge is that arithmetic. It reads a folder of check reports, normalises each to (tool, verdict, score), and combines them with published weights into a single composite score, rendered as a table or as a self-contained SVG badge. A failed check caps the composite at 49, coverage is always shown, and missing checks never count as passes.
 
-TrustBadge is that arithmetic. It reads a folder of check reports,
-normalizes each to (tool, verdict, score), and combines them with
-published weights into a single composite trust score, rendered as
-a table or as a self-contained SVG badge for your README:
+*Part of **AgentForge** — verify AI-agent work before you ship it.*
+*The family: [AgentProof](https://github.com/maticcretic-commits/agentproof) · [PromptRE](https://github.com/maticcretic-commits/promptre) · [AgentCI](https://github.com/maticcretic-commits/agentci) · [SecretScan](https://github.com/maticcretic-commits/secretscan) · [CostLedger](https://github.com/maticcretic-commits/costledger) · [SchemaGuard](https://github.com/maticcretic-commits/schemaguard) · [SkillAudit](https://github.com/maticcretic-commits/skillaudit) · [PromptDiff](https://github.com/maticcretic-commits/promptdiff) · [TraceTape](https://github.com/maticcretic-commits/tracetape) · [PromptLint](https://github.com/maticcretic-commits/promptlint) · [ClaimCheck](https://github.com/maticcretic-commits/claimcheck) · [TrustBadge](https://github.com/maticcretic-commits/trustbadge)*
 
 ![agent trust](examples/badge.svg)
 
-*(That badge is real: generated from the sample reports in
-`examples/reports/` — a project whose outputs fail their contract,
-capped at 49. See the example below.)*
+```bash
+$ trustbadge aggregate examples/reports-real
+```
 
-Offline and dependency-free: stdlib-only Python, no network, no
-account, fully deterministic. Same reports in, same score out.
+```
+====================================================================
+TrustBadge — aggregate report
+====================================================================
+Reports: examples/reports-real
+
+  check          verdict   score weight  summary
+  SecretScan     ❌ FAIL      40     16  2 finding(s): 1 critical, 1 high
+  PromptLint     ❌ FAIL      79      5  1 prompt(s) linted · worst score 79/100 · 2 finding(s)
+  TraceTape      ✅ PASS       —      4  1 tape(s) · 17 event(s) · 0 error(s) · 0 warning(s)
+
+Composite: 49/100 · 3 of 11 checks
+⚠️ Capped at 49: SecretScan, PromptLint FAILED — raw weighted score was 57.4. A failed check caps the badge; fix the failure, not the arithmetic.
+Not run: AgentCI, AgentProof, ClaimCheck, CostLedger, PromptDiff, PromptRE, SchemaGuard, SkillAudit — missing checks never count as passes; they only narrow the coverage.
+```
+
+*Exit code 0 — report produced. Add `--fail-under 70` and this same folder exits 1. This is the family's real dogfood run: the badge above is generated from these very reports.*
+
+## Install
 
 ```bash
-python src/trustbadge.py aggregate reports/
-python src/trustbadge.py badge reports/ --out badge.svg
-python src/trustbadge.py aggregate reports/ --fail-under 70   # CI gate
+pipx install git+https://github.com/maticcretic-commits/trustbadge
+# or, into the current environment:
+pip install git+https://github.com/maticcretic-commits/trustbadge
+```
+
+Then run it as `trustbadge …` (Python 3.9+, no dependencies — stdlib only).
+PyPI release planned; until then, the git URL above is the install path.
+
+From source — it is a single file, so no install is needed at all:
+
+```bash
+git clone https://github.com/maticcretic-commits/trustbadge
+cd trustbadge
+python src/trustbadge.py …
 ```
 
 ## The commands
@@ -205,10 +227,28 @@ trustbadge aggregate reports --fail-under 70
 trustbadge badge reports --out badge.svg   # prints ![agent trust](badge.svg)
 ```
 
+## Exit codes & JSON output
+
+All AgentForge tools share one contract (full text in
+[CONVENTIONS.md](CONVENTIONS.md)):
+
+| Code | Meaning |
+|------|---------|
+| `0` | Clean / PASS — no findings at or above the tool's fail threshold |
+| `1` | Findings / FAIL — the tool ran fine; the answer is “no” |
+| `2` | Caller error — bad arguments, missing or unreadable input |
+| `3` | Environment error — the tool itself could not run |
+
+On a caller error the tool also prints one JSON line to stderr:
+`{"error": {"code": "file_not_found", "message": "no such file: x"}}`.
+
+JSON output (`--format json`) always carries the family envelope —
+`{"tool": "trustbadge", "version": "1.0.0", "schema_version": 1}` — alongside
+the tool's own payload keys, unchanged.
+
 ## Part of AgentForge
 
-TrustBadge is the twelfth tool in the [AgentForge](https://github.com/maticcretic-commits)
-trust layer for AI agents:
+TrustBadge is one of the 12 tools in the [AgentForge](https://github.com/maticcretic-commits) family — offline, stdlib-only tools to **verify AI-agent work before you ship it**:
 
 - **AgentProof** — verify agent work — [github.com/maticcretic-commits/agentproof](https://github.com/maticcretic-commits/agentproof)
 - **PromptRE** — reverse-engineer agent prompts — [github.com/maticcretic-commits/promptre](https://github.com/maticcretic-commits/promptre)
