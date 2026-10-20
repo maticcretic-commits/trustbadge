@@ -1,0 +1,42 @@
+{
+  "tool": "promptlint",
+  "version": "1.0.0",
+  "results": [
+    {
+      "path": "promptre/examples/support-agent-prompt.md",
+      "lines": 32,
+      "findings": [
+        {
+          "check": "contradiction-polarity",
+          "severity": "high",
+          "category": "contradiction",
+          "line": 15,
+          "message": "Contradiction CANDIDATE — human review. Opposite constraint polarity on shared topic (issue, refund, user): line 15 \"- `issue_refund` — refund a charge. Always confirm with the user first.\" vs line 19 \"- Never issue a refund without explicit user confirmation.\"",
+          "snippet": "- `issue_refund` — refund a charge. Always confirm with the user first."
+        },
+        {
+          "check": "unverifiable-ask",
+          "severity": "medium",
+          "category": "testability",
+          "line": 10,
+          "message": "The prompt asks for facts or citations but gives no source and no citation format — the model will invent plausible-looking references.",
+          "snippet": "2. Check the facts with the `invoice_lookup` tool before answering."
+        }
+      ],
+      "counts": {
+        "high": 1,
+        "medium": 1,
+        "low": 0,
+        "info": 0
+      },
+      "score": 79,
+      "verdict": "FAIL"
+    }
+  ],
+  "summary": {
+    "files": 1,
+    "failed": 1,
+    "worst_score": 79,
+    "findings": 2
+  }
+}
