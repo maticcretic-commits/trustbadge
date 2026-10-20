@@ -532,3 +532,110 @@ def test_reports_real_dogfood():
     assert report["coverage"]["ran"] == 3
     tools = {c["tool"] for c in report["checks"]}
     assert tools == {"secretscan", "promptlint", "tracetape"}
+
+
+# ---------------------------------------------------------------------------
+# Envelope shapes (Phase 1: tool/version/schema_version + fast paths)
+# ---------------------------------------------------------------------------
+
+def secretscan_envelope(findings):
+    return {"tool": "secretscan", "version": "1.0.0",
+            "schema_version": 1,
+            "findings_summary": {
+                "count": len(findings),
+                "highest_severity":
+                    "HIGH" if findings else "NONE"},
+            "findings": findings}
+
+
+def test_secretscan_envelope_high_finding_fails(tmp_path):
+    d = write_reports(tmp_path, {
+        "secretscan.json": secretscan_envelope([finding("high")])})
+    report = aggregate_reports(d)
+    checks = [c for c in report["checks"] if c["tool"] == "secretscan"]
+    assert len(checks) == 1 and checks[0]["verdict"] == "fail"
+
+
+def test_secretscan_envelope_empty_findings_passes(tmp_path):
+    d = write_reports(tmp_path, {
+        "secretscan.json": secretscan_envelope([])})
+    report = aggregate_reports(d)
+    checks = [c for c in report["checks"] if c["tool"] == "secretscan"]
+    assert len(checks) == 1 and checks[0]["verdict"] == "pass"
+
+
+def test_promptre_envelope_worst_score_governs(tmp_path):
+    d = write_reports(tmp_path, {
+        "promptre.json": {
+            "tool": "promptre", "version": "1.0.0",
+            "schema_version": 1,
+            "results": [{"file": "a.md", "structure_score": 95},
+                        {"file": "b.md", "structure_score": 65}]}})
+    report = aggregate_reports(d)
+    checks = [c for c in report["checks"] if c["tool"] == "promptre"]
+    assert len(checks) == 1 and checks[0]["score"] == 65
+
+
+def test_envelope_findings_summary_generic_fail():
+    r = check_of({"tool": "sometool", "version": "9.9",
+                  "schema_version": 1,
+                  "findings_summary": {"count": 2,
+                                       "highest_severity": "HIGH"}})
+    assert r["tool"] == "sometool" and r["verdict"] == "fail"
+    assert r["score"] is None
+
+
+def test_envelope_findings_summary_generic_pass():
+    r = check_of({"tool": "sometool", "version": "9.9",
+                  "schema_version": 1,
+                  "findings_summary": {"count": 0,
+                                       "highest_severity": "NONE"}})
+    assert r["verdict"] == "pass" and r["score"] is None
+
+
+def test_trustbadge_envelope_still_refused():
+    assert adapt_report(
+        {"tool": "trustbadge", "version": "1.0.0",
+         "schema_version": 1,
+         "findings_summary": {"count": 3,
+                              "highest_severity": "HIGH"}},
+        "tb.json") is None
+
+
+def test_aggregate_json_has_schema_version(tmp_path):
+    d = write_reports(tmp_path, {"a.json": []})
+    out = run_cli("aggregate", str(d), "--format", "json")
+    assert out.returncode == 0
+    report = json.loads(out.stdout)
+    assert report["schema_version"] == 1
+    assert isinstance(report["schema_version"], int)
+
+
+def test_version_flag():
+    out = run_cli("--version")
+    assert out.returncode == 0
+    assert out.stdout.strip() == "trustbadge 1.0.0"
+
+
+def test_dogfood_real_secretscan_envelope(tmp_path):
+    sibling = (Path(__file__).parent.parent.parent / "secretscan"
+               / "src" / "secretscan.py")
+    if not sibling.exists():
+        pytest.skip("sibling secretscan not available")
+    planted = tmp_path / "planted.txt"
+    planted.write_text("key = " + "AKIA" + "IOSFODNN7" + "EXAMPLE"
+                       + "\n", encoding="utf-8")
+    proc = subprocess.run(
+        [sys.executable, str(sibling), "scan", str(planted),
+         "--format", "json"],
+        capture_output=True, text=True)
+    # A high finding exits 1 in SecretScan; the JSON is what matters.
+    payload = json.loads(proc.stdout)
+    assert payload["tool"] == "secretscan"
+    assert payload["schema_version"] == 1
+    assert isinstance(payload["findings"], list) \
+        and len(payload["findings"]) == 1
+    d = write_reports(tmp_path, {"secretscan.json": payload})
+    report = aggregate_reports(d)
+    checks = [c for c in report["checks"] if c["tool"] == "secretscan"]
+    assert len(checks) == 1 and checks[0]["verdict"] == "fail"
