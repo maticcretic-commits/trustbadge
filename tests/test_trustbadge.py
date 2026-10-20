@@ -639,3 +639,97 @@ def test_dogfood_real_secretscan_envelope(tmp_path):
     report = aggregate_reports(d)
     checks = [c for c in report["checks"] if c["tool"] == "secretscan"]
     assert len(checks) == 1 and checks[0]["verdict"] == "fail"
+
+
+# ---------------------------------------------------------------------------
+# ClaimCheck `docs` reports (documentation integrity)
+# ---------------------------------------------------------------------------
+
+def docs_report(verdict="PASS", score=100, readmes=12, failed=0,
+                findings=0):
+    return {"tool": "claimcheck", "version": "1.0.0",
+            "schema_version": 1, "kind": "docs",
+            "findings_summary": {
+                "count": findings,
+                "highest_severity": "HIGH" if verdict == "FAIL"
+                else ("INFO" if findings else "NONE")},
+            "target": ".",
+            "results": [],
+            "findings": [],
+            "summary": {"readmes": readmes, "failed": failed,
+                        "findings": findings},
+            "score": score, "verdict": verdict}
+
+
+def test_claimcheck_docs_adapter_pass():
+    r = check_of(docs_report())
+    assert r["tool"] == "claimcheck"
+    assert r["verdict"] == "pass"
+    assert r["score"] == 100
+    assert "documentation integrity" in r["summary"]
+    assert "12 README(s)" in r["summary"]
+
+
+def test_claimcheck_docs_adapter_warn():
+    r = check_of(docs_report(verdict="WARN", score=76, findings=4))
+    assert r["verdict"] == "warn"
+    assert r["score"] == 76
+
+
+def test_claimcheck_docs_fail_caps_composite(tmp_path):
+    d = write_reports(tmp_path, {
+        "claimcheck-docs.json": docs_report(
+            verdict="FAIL", score=40, failed=1, findings=2),
+        "costledger.json": {
+            "tool": "costledger", "version": "1.0.0",
+            "totals": {"events": 3, "total_tokens": 100,
+                       "cost_usd": "0.0100", "cost_complete": True}},
+    })
+    rep = aggregate_reports(str(d))
+    assert rep["capped"] is True
+    assert "claimcheck" in rep["capped_by"]
+    assert rep["composite"] <= 49
+
+
+def test_claimcheck_docs_and_check_reports_worst_counts(tmp_path):
+    # A passing docs report must not hide behind — or hide — a
+    # failing claim-audit report for the same tool: the worst counts.
+    d = write_reports(tmp_path, {
+        "docs.json": docs_report(),
+        "check.json": {
+            "tool": "claimcheck", "version": "1.0.0",
+            "verdict": "FAIL", "score": 28,
+            "summary": {"claims": 9, "verified": 3, "unbacked": 4,
+                        "mismatch": 1},
+            "findings": []},
+    })
+    rep = aggregate_reports(str(d))
+    cc = [c for c in rep["checks"] if c["tool"] == "claimcheck"]
+    assert len(cc) == 1
+    assert cc[0]["verdict"] == "fail"
+    assert rep["capped"] is True
+
+
+def test_claimcheck_docs_missing_is_not_a_failure(tmp_path):
+    # No docs report at all: claimcheck is just missing coverage.
+    d = write_reports(tmp_path, {
+        "costledger.json": {
+            "tool": "costledger", "version": "1.0.0",
+            "totals": {"events": 3, "total_tokens": 100,
+                       "cost_usd": "0.0100", "cost_complete": True}},
+    })
+    rep = aggregate_reports(str(d))
+    assert rep["capped"] is False
+    assert "claimcheck" in rep["coverage"]["missing"]
+
+
+def test_claimcheck_check_report_without_kind_still_routes(tmp_path):
+    # Regression: a plain claim-audit report (no "kind") must keep
+    # using the claims adapter, not the docs adapter.
+    r = check_of({"tool": "claimcheck", "version": "1.0.0",
+                  "verdict": "PASS", "score": 100,
+                  "summary": {"claims": 4, "verified": 4,
+                              "unbacked": 0, "mismatch": 0},
+                  "findings": []})
+    assert r["tool"] == "claimcheck"
+    assert "claim(s)" in r["summary"]
