@@ -23,7 +23,7 @@ tracetape validate tracetape/examples/good.jsonl \
 
 - **SecretScan — FAIL (2 findings, both in `secretscan.py`
   itself).** Line 263 is a code comment that quotes the literal
-  text `aws_secret_access_key = ...` to explain a detector rule;
+  AWS secret-key assignment text to explain a detector rule;
   line 551 is the sample config template embedding AWS's
   published documentation example key. SecretScan flags its own
   fixtures — the documented false-positive class for scanner
