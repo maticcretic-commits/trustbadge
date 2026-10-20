@@ -1,0 +1,19 @@
+# AgentForge family dogfood: this repo verifies itself with the
+# shared reusable workflow (maticcretic-commits/.github) — TrustBadge aggregates the family's real dogfood reports published in examples/reports-real.
+# Reports are uploaded as run artifacts; a FAIL verdict fails the job.
+
+name: verify
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    uses: maticcretic-commits/.github/.github/workflows/agentforge-verify.yml@main
+    with:
+      tool: trustbadge
+      args: aggregate examples/reports-real --format json
