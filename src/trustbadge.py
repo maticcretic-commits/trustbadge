@@ -81,6 +81,10 @@ SEVERITIES = ("critical", "high", "medium", "low", "info")
 class UsageError(Exception):
     """Raised for input problems that map to exit code 2."""
 
+    def __init__(self, message, code="invalid_input"):
+        super().__init__(message)
+        self.code = code
+
 
 def display(tool):
     return DISPLAY.get(tool, tool)
@@ -422,12 +426,34 @@ def adapt_generic(data, source):
     {"tool": ..., "verdict": pass|warn|fail,
      "score": 0-100|null, "summary": ...}"""
     tool = data.get("tool")
-    verdict = norm_verdict(data.get("verdict"))
-    if not isinstance(tool, str) or not tool or verdict is None:
+    if not isinstance(tool, str) or not tool:
         return None
     tool = tool.strip().lower()
     if tool == "trustbadge":
         return None                     # never aggregate ourselves
+    verdict = norm_verdict(data.get("verdict"))
+    if verdict is None:
+        # Envelope fast path: no usable verdict, but a standardized
+        # findings_summary lets us derive one.
+        fs = data.get("findings_summary")
+        if isinstance(fs, dict) and "count" in fs \
+                and "highest_severity" in fs:
+            count = fs.get("count")
+            highest = fs.get("highest_severity")
+            highest_norm = str(highest).strip().upper()
+            if highest_norm in ("CRITICAL", "HIGH"):
+                verdict = "fail"
+            elif isinstance(count, (int, float)) and count > 0:
+                verdict = "warn"
+            else:
+                verdict = "pass"
+            summary = data.get("summary")
+            if not isinstance(summary, str) or not summary:
+                summary = (f"envelope findings_summary: {count} "
+                           f"finding(s), highest {highest}")
+            return ("check", make_result(tool, verdict, None,
+                                         summary, source))
+        return None
     score = data.get("score")
     if not isinstance(score, (int, float)):
         score = None
@@ -458,6 +484,12 @@ def adapt_report(data, source):
         return None
 
     tool = data.get("tool")
+    # Envelope fast paths (new sibling shapes, additive): the payload
+    # is wrapped in an envelope object under its natural key.
+    if tool == "secretscan" and isinstance(data.get("findings"), list):
+        return adapt_secretscan(data["findings"], source)
+    if tool == "promptre" and isinstance(data.get("results"), list):
+        return adapt_promptre(data["results"], source)
     if tool == "skillaudit":
         return adapt_skillaudit(data, source)
     if tool == "claimcheck":
@@ -506,8 +538,12 @@ def aggregate_reports(reports_dir):
     Raises UsageError (exit 2) when there is nothing to aggregate.
     """
     base = Path(reports_dir)
+    if not base.exists():
+        raise UsageError(f"reports directory not found: {reports_dir}",
+                         code="file_not_found")
     if not base.is_dir():
-        raise UsageError(f"reports directory not found: {reports_dir}")
+        raise UsageError(f"reports directory not found: {reports_dir}",
+                         code="not_a_directory")
     files = sorted(base.glob("*.json"))
     if not files:
         raise UsageError(f"no .json reports in {reports_dir} — "
@@ -571,6 +607,7 @@ def aggregate_reports(reports_dir):
     return {
         "tool": "trustbadge",
         "version": VERSION,
+        "schema_version": 1,
         "reports_dir": str(reports_dir),
         "composite": composite,
         "raw_composite": round(raw, 1),
@@ -767,13 +804,20 @@ then scores 100 · 4 of 11 checks.
 """
 
 
+def _print_error(message, code="invalid_input"):
+    """Human line + one JSON error-envelope line, both to stderr."""
+    print(f"error: {message}", file=sys.stderr)
+    print(json.dumps({"error": {"code": code, "message": message}}),
+          file=sys.stderr)
+
+
 def cmd_init(_args):
     reports_dir = Path("reports")
     expected = Path("EXPECTED.md")
     if expected.exists() or (reports_dir.exists()
                               and any(reports_dir.iterdir())):
-        print("error: reports/ or EXPECTED.md already exists here — "
-              "refusing to overwrite", file=sys.stderr)
+        _print_error("reports/ or EXPECTED.md already exists here — "
+                     "refusing to overwrite", code="already_exists")
         return 2
     reports_dir.mkdir(exist_ok=True)
     for name, payload in INIT_REPORTS.items():
@@ -802,7 +846,7 @@ def cmd_aggregate(args):
     try:
         report = aggregate_reports(args.reports_dir)
     except UsageError as e:
-        print(f"error: {e}", file=sys.stderr)
+        _print_error(str(e), code=getattr(e, "code", "invalid_input"))
         return 2
     if args.format == "json":
         print(json.dumps(report, indent=2, ensure_ascii=False))
@@ -815,7 +859,7 @@ def cmd_badge(args):
     try:
         report = aggregate_reports(args.reports_dir)
     except UsageError as e:
-        print(f"error: {e}", file=sys.stderr)
+        _print_error(str(e), code=getattr(e, "code", "invalid_input"))
         return 2
     out = Path(args.out)
     out.write_text(badge_svg(report), encoding="utf-8")
@@ -833,6 +877,12 @@ def main(argv=None):
         description="One badge. Every check behind it. Aggregate "
                     "AgentForge JSON reports into a single trust "
                     "score + README badge.")
+    parser.add_argument("--version", action="version",
+                        version=f"trustbadge {VERSION}")
+    parser.add_argument("--no-color", action="store_true",
+                        help="disable ANSI color output (this tool "
+                             "emits none; accepted for family "
+                             "consistency)")
     sub = parser.add_subparsers(dest="command", required=True)
 
     a = sub.add_parser("aggregate",
