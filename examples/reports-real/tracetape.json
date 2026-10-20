@@ -1,0 +1,22 @@
+{
+  "tool": "tracetape",
+  "version": "1.0.0",
+  "command": "validate",
+  "ok": true,
+  "files": [
+    {
+      "file": "tracetape/examples/good.jsonl",
+      "events": 17,
+      "lines": 17,
+      "runs": [
+        "checkout-2026-10-20-a",
+        "digest-2026-10-20-b"
+      ],
+      "incomplete_runs": [],
+      "errors": [],
+      "warnings": [],
+      "ok": true,
+      "blank_lines": 0
+    }
+  ]
+}
