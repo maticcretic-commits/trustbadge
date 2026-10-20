@@ -345,6 +345,31 @@ def adapt_claimcheck(data, source):
                                  summary, source))
 
 
+def adapt_claimcheck_docs(data, source):
+    """A ClaimCheck `docs` report (kind == "docs"): documentation
+    integrity across README files. Scored as the ClaimCheck check —
+    a FAIL here caps the composite like any other FAIL, because a
+    project whose README shipped truncated has a claims problem.
+    A missing docs report is simply missing coverage, never a
+    failure."""
+    verdict = norm_verdict(data.get("verdict"))
+    if verdict is None:
+        return None
+    score = data.get("score")
+    if not isinstance(score, (int, float)):
+        score = None
+    summ = data.get("summary") or {}
+    readmes = summ.get("readmes", len(data.get("results") or []))
+    findings = summ.get("findings", len(data.get("findings") or []))
+    failed = summ.get("failed", 0)
+    summary = (f"documentation integrity · {readmes} README(s) "
+               f"checked · {findings} finding(s)")
+    if failed:
+        summary += f" · {failed} README(s) failing"
+    return ("check", make_result("claimcheck", verdict, score,
+                                 summary, source))
+
+
 def adapt_promptlint(data, source):
     results = data["results"]
     if not results:
@@ -492,6 +517,8 @@ def adapt_report(data, source):
         return adapt_promptre(data["results"], source)
     if tool == "skillaudit":
         return adapt_skillaudit(data, source)
+    if tool == "claimcheck" and data.get("kind") == "docs":
+        return adapt_claimcheck_docs(data, source)
     if tool == "claimcheck":
         return adapt_claimcheck(data, source)
     if tool == "promptlint" and isinstance(data.get("results"), list):
